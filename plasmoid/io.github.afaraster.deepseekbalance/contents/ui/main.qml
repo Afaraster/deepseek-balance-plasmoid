@@ -7,7 +7,7 @@ import org.kde.kirigami as Kirigami
 PlasmoidItem {
     id: root
 
-    // 组件只读本地缓存（--cached，不发网络请求），所以不会额外消耗额度；
+    // 组件只读本地缓存（--cached，不发网络请求），所以多开几个组件也不会重复调用接口；
     // 真正的 API 请求由 systemd 用户定时器 ds-balance.timer 每 5 分钟做一次。
     // 用 `sh -c` 是为了让 $HOME 展开，避免把绝对路径写死在源码里。
     readonly property string queryCommand: "sh -c \"exec $HOME/.local/bin/ds-balance --widget --cached\""

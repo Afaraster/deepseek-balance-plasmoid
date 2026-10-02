@@ -14,9 +14,9 @@ endpoint documented at `GET /user/balance`.
 
 - **Always on the desktop**: a Plasma 6 plasmoid that works on the desktop or in
   a panel, with both a full and a compact representation.
-- **No wasted quota**: the widget polls the local cache every 30 seconds and makes
-  **no network requests**; the actual API call is made once every 5 minutes by a
-  systemd user timer.
+- **No redundant API calls**: the widget polls the local cache every 30 seconds and
+  makes **no network requests**; the actual API call is made once every 5 minutes
+  by a systemd user timer, so running several widget instances changes nothing.
 - **Spend trend**: every query appends a history entry, which is what makes the
   "last 1h / 24h" figures possible — you can literally see what a conversation cost.
 - **Failures are visible**: on network errors the last known value is kept and
