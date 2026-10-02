@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""ds-balance —— 查询 DeepSeek 开放平台余额（带缓存与消耗统计）
+
+用法:
+  ds-balance            人类可读文本
+  ds-balance --widget   单行 JSON（给桌面组件用）
+  ds-balance --cached   只用本地缓存，不发网络请求（组件用）
+  ds-balance --force    忽略缓存强制请求
+  ds-balance --history  打印最近 20 条历史
+
+API key 读取顺序:
+  1. 环境变量 DEEPSEEK_API_KEY
+  2. ~/.config/deepseek/api_key（文件内容就是 key，可加换行）
+  3. ~/.hermes/.env 里的 DEEPSEEK_API_KEY=（Hermes Agent 用户可直接复用）
+
+接口地址可用环境变量 DEEPSEEK_BASE_URL 覆盖（默认 https://api.deepseek.com）。
+"""
+import json, os, sys, time, pathlib, datetime, urllib.request, urllib.error, fcntl
+
+HOME = pathlib.Path.home()
+STATE = HOME / ".cache/deepseek"
+CACHE = STATE / "balance.json"
+HIST = STATE / "history.jsonl"
+LOCK = STATE / ".lock"
+KEY_FILE = HOME / ".config/deepseek/api_key"
+HERMES_ENV = HOME / ".hermes/.env"
+BASE = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
+TTL = 270            # 缓存有效期（秒），略短于 5 分钟
+TIMEOUT = 20
+
+
+def load_key():
+    key = os.environ.get("DEEPSEEK_API_KEY")
+    if key:
+        return key.strip()
+    if KEY_FILE.exists():
+        key = KEY_FILE.read_text().strip()
+        if key:
+            return key
+    if HERMES_ENV.exists():
+        for line in HERMES_ENV.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("DEEPSEEK_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    sys.exit(f"找不到 API key：设置 DEEPSEEK_API_KEY，或写入 {KEY_FILE}")
+
+
+def fetch(key):
+    req = urllib.request.Request(
+        f"{BASE}/user/balance",
+        headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        return json.loads(r.read().decode())
+
+
+def flatten(payload):
+    out = {"is_available": payload.get("is_available"), "ts": time.time(),
+           "ts_str": datetime.datetime.now().strftime("%m-%d %H:%M")}
+    for b in payload.get("balance_infos", []):
+        cur = b.get("currency", "?").lower()
+        out[cur] = {
+            "total": float(b.get("total_balance", 0)),
+            "granted": float(b.get("granted_balance", 0)),
+            "topped_up": float(b.get("topped_up_balance", 0)),
+        }
+    return out
+
+
+def read_cache():
+    try:
+        return json.loads(CACHE.read_text())
+    except Exception:
+        return None
+
+
+def log_invocation(mode, source, total):
+    """每次调用留一行，便于查"组件/定时器到底在不在跑"。"""
+    try:
+        p = STATE / "invocations.log"
+        with open(p, "a") as f:
+            f.write(f'{datetime.datetime.now().strftime("%m-%d %H:%M:%S")} '
+                    f'mode={mode} source={source} total={total}\n')
+        lines = p.read_text().splitlines()
+        if len(lines) > 2000:
+            p.write_text("\n".join(lines[-2000:]) + "\n")
+    except Exception:
+        pass
+
+
+def burn(since_sec):
+    """从历史里估算最近 since_sec 秒的消耗（元）。"""
+    if not HIST.exists():
+        return None
+    cutoff = time.time() - since_sec
+    pts = []
+    for line in HIST.read_text().splitlines()[-2000:]:
+        try:
+            d = json.loads(line)
+            if d.get("ts", 0) >= cutoff and "cny" in d:
+                pts.append(d)
+        except Exception:
+            pass
+    if len(pts) < 2:
+        return None
+    return max(0.0, pts[0]["cny"]["total"] - pts[-1]["cny"]["total"])
+
+
+def main():
+    args = sys.argv[1:]
+    STATE.mkdir(parents=True, exist_ok=True)
+
+    if "--history" in args:
+        lines = HIST.read_text().splitlines() if HIST.exists() else []
+        for l in lines[-20:]:
+            d = json.loads(l)
+            print(f'{d["ts_str"]}  ¥{d.get("cny",{}).get("total","?")}')
+        return
+
+    with open(LOCK, "w") as lk:                       # 避免 timer 与组件同时打 API
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        cache = read_cache()
+        fresh = cache and (time.time() - cache.get("ts", 0) < TTL)
+        cached_only = "--cached" in args
+        if cached_only and cache is None:
+            msg = "还没有缓存（等 ds-balance.service 跑一次）"
+            if "--widget" in args:
+                print(json.dumps({"ok": False, "error": msg}, ensure_ascii=False))
+            else:
+                print(msg)
+            sys.exit(1)
+        if cached_only or (fresh and "--force" not in args):
+            data = cache
+            data["_source"] = "cache"
+        else:
+            try:
+                data = flatten(fetch(load_key()))
+                data["_source"] = "api"
+                CACHE.write_text(json.dumps(data, ensure_ascii=False))
+                with open(HIST, "a") as f:
+                    f.write(json.dumps(data, ensure_ascii=False) + "\n")
+            except Exception as e:
+                if cache:                              # 网络挂了就展示上次结果
+                    data = cache
+                    data["_source"] = "stale"
+                    data["_error"] = f"{type(e).__name__}: {e}"
+                else:
+                    msg = f"查询失败: {type(e).__name__}: {e}"
+                    if "--widget" in args:
+                        print(json.dumps({"ok": False, "error": msg}, ensure_ascii=False))
+                    else:
+                        print(msg)
+                    sys.exit(1)
+
+    cny = data.get("cny", {})
+    age = int(time.time() - data.get("ts", 0))
+    data["_age"] = age
+    log_invocation("widget" if "--widget" in args else "cli",
+                   data.get("_source"), cny.get("total"))
+    b1h, b24h = burn(3600), burn(86400)
+
+    if "--widget" in args:
+        print(json.dumps({
+            "ok": True, "total": cny.get("total"), "granted": cny.get("granted"),
+            "topped_up": cny.get("topped_up"), "is_available": data.get("is_available"),
+            "ts_str": data.get("ts_str"), "age": age, "burn_1h": b1h, "burn_24h": b24h,
+            "source": data.get("_source"), "error": data.get("_error"),
+        }, ensure_ascii=False))
+        return
+
+    if "--json" in args:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        return
+
+    total = cny.get("total", 0)
+    lines = [f"DeepSeek 余额  ¥{total:.2f}"]
+    lines.append(f"  充值 ¥{cny.get('topped_up',0):.2f} + 赠金 ¥{cny.get('granted',0):.2f}")
+    if b1h is not None:
+        lines.append(f"  近1小时消耗 ¥{b1h:.4f}")
+    if b24h is not None:
+        lines.append(f"  近24小时消耗 ¥{b24h:.4f}")
+    lines.append(f"  更新 {data.get('ts_str')}（{age}s 前，来源 {data.get('_source')}）")
+    if data.get("_error"):
+        lines.append(f"  ⚠ {data['_error']}")
+    print("\n".join(lines))
+
+
+if __name__ == "__main__":
+    main()

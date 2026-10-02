@@ -1,0 +1,6 @@
+[Unit]
+Description=DeepSeek 余额查询（预热缓存 + 记录消耗历史）
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/ds-balance
