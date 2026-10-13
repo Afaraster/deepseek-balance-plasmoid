@@ -118,6 +118,18 @@ def burn(since_sec):
     return spent
 
 
+def money(v):
+    """金额显示两位小数 —— 官方平台与财务口径都是分。
+
+    正但不足 0.005 的值会被四舍五入成 0.00，看起来像"没有消耗"，故记为 <0.01。
+    """
+    if v is None:
+        return "—"
+    if 0 < v < 0.005:
+        return "<0.01"
+    return f"{v:.2f}"
+
+
 def main():
     args = sys.argv[1:]
     STATE.mkdir(parents=True, exist_ok=True)
@@ -188,9 +200,9 @@ def main():
     lines = [f"DeepSeek 余额  ¥{total:.2f}"]
     lines.append(f"  充值 ¥{cny.get('topped_up',0):.2f} + 赠金 ¥{cny.get('granted',0):.2f}")
     if b1h is not None:
-        lines.append(f"  近1小时消耗 ¥{b1h:.4f}")
+        lines.append(f"  近1小时消耗 ¥{money(b1h)}")
     if b24h is not None:
-        lines.append(f"  近24小时消耗 ¥{b24h:.4f}")
+        lines.append(f"  近24小时消耗 ¥{money(b24h)}")
     lines.append(f"  更新 {data.get('ts_str')}（{age}s 前，来源 {data.get('_source')}）")
     if data.get("_error"):
         lines.append(f"  ⚠ {data['_error']}")

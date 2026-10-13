@@ -14,7 +14,7 @@
         "License": "MIT",
         "Name": "DeepSeek Balance",
         "Name[zh_CN]": "DeepSeek 余额",
-        "Version": "1.0"
+        "Version": "0.1.0"
     },
     "X-Plasma-API-Minimum-Version": "6.0"
 }

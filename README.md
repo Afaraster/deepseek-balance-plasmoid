@@ -79,8 +79,8 @@ ds-balance --history   # 最近 20 条历史
 ```
 DeepSeek 余额  ¥43.64
   充值 ¥43.64 + 赠金 ¥0.00
-  近1小时消耗 ¥0.2800
-  近24小时消耗 ¥0.2800
+  近1小时消耗 ¥0.28
+  近24小时消耗 ¥0.28
   更新 10-02 15:27（12s 前，来源 api）
 ```
 
@@ -125,7 +125,8 @@ plasmoid/io.github.afaraster.deepseekbalance/    Plasma 组件
   ├── metadata.json
   └── contents/ui/main.qml
 systemd/ds-balance.{service,timer}               用户级 service 与 5 分钟定时器
-tests/test_burn.py                               消耗统计的回归测试（python3 tests/test_burn.py）
+tests/test_burn.py                               消耗统计回归测试（python3 tests/test_burn.py）
+tests/test_money.py                              金额格式化回归测试（python3 tests/test_money.py）
 install.sh                                       安装 / 升级
 ```
 

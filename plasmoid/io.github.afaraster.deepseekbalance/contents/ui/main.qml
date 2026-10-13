@@ -30,7 +30,11 @@ PlasmoidItem {
     function fmt(v) {
         if (v === null || v === undefined)
             return null;
-        return Number(v).toFixed(4);
+        var n = Number(v);
+        // 金额只到分；不足一分的正数单独标出来，否则会显示成 0.00
+        if (n > 0 && n < 0.005)
+            return "<0.01";
+        return n.toFixed(2);
     }
 
     function refresh() {

@@ -92,8 +92,8 @@ Sample output:
 ```
 DeepSeek 余额  ¥43.64
   充值 ¥43.64 + 赠金 ¥0.00
-  近1小时消耗 ¥0.2800
-  近24小时消耗 ¥0.2800
+  近1小时消耗 ¥0.28
+  近24小时消耗 ¥0.28
   更新 10-02 15:27（12s 前，来源 api）
 ```
 
@@ -145,6 +145,7 @@ plasmoid/io.github.afaraster.deepseekbalance/    the Plasma widget
   └── contents/ui/main.qml
 systemd/ds-balance.{service,timer}               user service + 5-minute timer
 tests/test_burn.py                               regression test for the spend figures (`python3 tests/test_burn.py`)
+tests/test_money.py                              regression test for amount formatting (`python3 tests/test_money.py`)
 install.sh                                       install / upgrade
 ```
 
