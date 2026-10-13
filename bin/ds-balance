@@ -89,7 +89,12 @@ def log_invocation(mode, source, total):
 
 
 def burn(since_sec):
-    """从历史里估算最近 since_sec 秒的消耗（元）。"""
+    """从历史里估算最近 since_sec 秒的消耗（元）。
+
+    只累加相邻两次采样之间的"余额下降量"，忽略上升量：充值、赠金都会让余额上升，
+    若用窗口首尾差值（旧写法）算，一次充值就能把整段消耗抹平到 0。
+    代价是同一采样间隔（5 分钟）内既充值又消耗时，该间隔的消耗可能漏计。
+    """
     if not HIST.exists():
         return None
     cutoff = time.time() - since_sec
@@ -103,7 +108,14 @@ def burn(since_sec):
             pass
     if len(pts) < 2:
         return None
-    return max(0.0, pts[0]["cny"]["total"] - pts[-1]["cny"]["total"])
+    spent = 0.0
+    prev = pts[0]["cny"]["total"]
+    for d in pts[1:]:
+        cur = d["cny"]["total"]
+        if cur < prev:
+            spent += prev - cur
+        prev = cur
+    return spent
 
 
 def main():

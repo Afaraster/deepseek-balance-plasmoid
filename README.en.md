@@ -19,6 +19,8 @@ endpoint documented at `GET /user/balance`.
   by a systemd user timer, so running several widget instances changes nothing.
 - **Spend trend**: every query appends a history entry, which is what makes the
   "last 1h / 24h" figures possible — you can literally see what a conversation cost.
+  The figure is the **sum of the balance drops between consecutive samples**, so
+  top-ups and grants never distort it.
 - **Failures are visible**: on network errors the last known value is kept and
   labelled; if the data is more than 10 minutes old, the status dot turns from a
   green `●` into a yellow `⚠` instead of quietly showing a stale number.
@@ -142,6 +144,7 @@ plasmoid/io.github.afaraster.deepseekbalance/    the Plasma widget
   ├── metadata.json
   └── contents/ui/main.qml
 systemd/ds-balance.{service,timer}               user service + 5-minute timer
+tests/test_burn.py                               regression test for the spend figures (`python3 tests/test_burn.py`)
 install.sh                                       install / upgrade
 ```
 
@@ -173,6 +176,25 @@ the cache every 30 seconds. Restart the shell after upgrading:
 ```bash
 systemctl --user restart plasma-plasmashell
 ```
+
+**Spend figures drop to 0 after a top-up**
+Versions before 2026-10-13 computed the spend as the window's first balance minus
+its last one, so a top-up (balance going up) pushed the whole figure negative and
+it got clamped to 0. The figure is now the sum of the balance drops between
+consecutive samples; top-ups no longer affect it. History does not need to be
+re-collected — the number is recomputed from the existing history, so a single
+`ds-balance` run shows the right value.
+
+**The spend figure does not match my invoice**
+It comes from one balance sample every 5 minutes, so:
+
+- boundary error of up to one sampling interval (5 minutes);
+- if a top-up and spending happen inside the same interval and the net is
+  positive, that interval's spend is missed;
+- while the laptop is off/asleep there are no samples, and net-positive spending
+  in that gap is missed too.
+
+For finer numbers, lower `OnUnitActiveSec` in `systemd/ds-balance.timer`.
 
 **Position / size**
 Just drag it. To change coordinates in bulk, edit the matching

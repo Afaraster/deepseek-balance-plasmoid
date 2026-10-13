@@ -12,7 +12,7 @@
 
 - **桌面常驻**：Plasma 6 组件（plasmoid），可放桌面或面板；有完整形态和紧凑形态。
 - **不重复调用接口**：组件每 30 秒只读本地缓存，**不发网络请求**；真正的 API 调用由 systemd 用户定时器每 5 分钟做一次，多开几个组件也不会重复打接口。
-- **消耗趋势**：每次查询追加一条历史，据此算近 1 小时 / 24 小时的消耗，肉眼可见"这段对话花了多少钱"。
+- **消耗趋势**：每次查询追加一条历史，据此算近 1 小时 / 24 小时的消耗，肉眼可见"这段对话花了多少钱"。统计口径是**相邻两次采样之间的余额下降量之和**，所以充值和赠金不会影响它。
 - **失败可见**：网络异常时沿用上一次结果并标注；数据超过 10 分钟没更新，状态点从绿 `●` 变黄 `⚠`，不会悄悄显示一个过期数字。
 - **零依赖**：查询脚本只用 Python 3 标准库（`urllib`），不需要 pip 装任何东西。
 - **可命令行用**：脚本本身就能跑，不做桌面组件也能用。
@@ -125,6 +125,7 @@ plasmoid/io.github.afaraster.deepseekbalance/    Plasma 组件
   ├── metadata.json
   └── contents/ui/main.qml
 systemd/ds-balance.{service,timer}               用户级 service 与 5 分钟定时器
+tests/test_burn.py                               消耗统计的回归测试（python3 tests/test_burn.py）
 install.sh                                       安装 / 升级
 ```
 
@@ -153,6 +154,18 @@ ds-balance --force
 ```bash
 systemctl --user restart plasma-plasmashell
 ```
+
+**充值之后近 1h / 24h 消耗变成 0**
+2026-10-13 之前的版本用"窗口首尾余额差"算消耗，一次充值（余额上升）会把整段消耗减成负数、再被夹到 0。现在改为累加相邻采样之间的余额下降量，充值不再影响统计；历史数据不用重采，统计是从已有历史重算的，跑一次 `ds-balance` 就能看到正确数字。
+
+**消耗数字和实际账单对不上**
+统计来自每 5 分钟一次的余额采样，所以：
+
+- 边界误差最多一个采样间隔（5 分钟）；
+- 若某次采样间隔里既充值又消耗、且净额为正，这一格的消耗会漏计；
+- 笔记本关机/休眠期间没有采样，该时段内净额为正的消耗也会漏计。
+
+要看更细的数，把 `systemd/ds-balance.timer` 的 `OnUnitActiveSec` 调小一点即可。
 
 **组件位置/大小**
 拖动即可。批量改坐标要动 `~/.config/plasma-org.kde.plasma.desktop-appletsrc` 里 `ItemGeometries-<宽>x<高>` 的对应条目（形如 `Applet-<id>:x,y,w,h,0`），改完重启 shell —— 注意这个文件被运行中的 plasmashell 缓存，必须先停再改。
